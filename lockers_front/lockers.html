@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Centered Buttons with POST Requests</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* Use Inter as the default font */
+      body {
+        font-family: "Inter", sans-serif;
+      }
+    </style>
+  </head>
+  <body class="bg-gray-100">
+    <div class="h-screen flex flex-col items-center justify-center">
+      <div class="flex space-x-4">
+        <button
+          id="commandButton1"
+          class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-4 px-8 text-3xl rounded-lg shadow-lg transform hover:scale-105 transition-transform"
+        >
+          1
+        </button>
+
+        <button
+          id="commandButton2"
+          class="bg-green-500 hover:bg-green-600 text-white font-bold py-4 px-8 text-3xl rounded-lg shadow-lg transform hover:scale-105 transition-transform"
+        >
+          2
+        </button>
+      </div>
+
+      <p id="statusMessage" class="mt-4 text-lg text-gray-600 h-6"></p>
+
+      <div class="mt-4 text-center">
+        <p class="text-lg text-gray-700">Server Response:</p>
+        <p
+          id="responseArea"
+          class="mt-1 text-2xl font-mono bg-gray-200 p-2 rounded"
+        ></p>
+      </div>
+    </div>
+
+    <script>
+      // --- JavaScript to send a POST request on button click ---
+
+      // Get the button and status message elements from the DOM
+      const commandButton1 = document.getElementById("commandButton1");
+      const commandButton2 = document.getElementById("commandButton2"); // New button
+      const statusMessage = document.getElementById("statusMessage");
+      const responseArea = document.getElementById("responseArea"); // New response area
+
+      // --- Event Listener for the First Button ---
+      commandButton1.addEventListener("click", () => {
+        const url = "http://localhost:8080/send-command";
+
+        statusMessage.textContent = "Sending command 1...";
+        statusMessage.classList.remove("text-green-600", "text-red-600");
+        statusMessage.classList.add("text-gray-600");
+        responseArea.textContent = ""; // Clear previous response
+
+        fetch(url, {
+          method: "POST",
+        })
+          .then((response) => {
+            if (response.ok) {
+              console.log("Command 1 sent successfully!");
+              statusMessage.textContent = "Command 1 sent successfully!";
+              statusMessage.classList.add("text-green-600");
+              return response.text();
+            }
+            throw new Error(`HTTP error! Status: ${response.status}`);
+          })
+          .then((data) => {
+            console.log("Server response:", data);
+          })
+          .catch((error) => {
+            console.error("Error sending command 1:", error);
+            statusMessage.textContent =
+              "Error: Could not send command 1. Is the server running?";
+            statusMessage.classList.add("text-red-600");
+          });
+      });
+
+      // --- Event Listener for the Second Button (New) ---
+      commandButton2.addEventListener("click", () => {
+        const url = "http://localhost:8080/send-command-with-response";
+
+        statusMessage.textContent =
+          "Sending command 2 and awaiting response...";
+        statusMessage.classList.remove("text-green-600", "text-red-600");
+        statusMessage.classList.add("text-gray-600");
+        responseArea.textContent = "Waiting..."; // Placeholder text
+
+        fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        })
+          .then((response) => {
+            if (response.ok) {
+              statusMessage.textContent = "Response received successfully!";
+              statusMessage.classList.add("text-green-600");
+              return response.json(); // We expect a JSON response
+            }
+            throw new Error(`HTTP error! Status: ${response.status}`);
+          })
+          .then((data) => {
+            console.log("Server response:", data);
+            // Display the 'response_hex' from the JSON object
+            responseArea.textContent = data.response_hex;
+          })
+          .catch((error) => {
+            console.error("Error sending command 2:", error);
+            statusMessage.textContent =
+              "Error: Could not get response. Is the server running?";
+            statusMessage.classList.add("text-red-600");
+            responseArea.textContent = "Error";
+          });
+      });
+    </script>
+  </body>
+</html>
