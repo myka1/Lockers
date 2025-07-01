@@ -6,11 +6,12 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/rs/cors"
+	"github.com/gin-contrib/cors"
+	"github.com/gin-gonic/gin"
 	"go.bug.st/serial"
 )
 
-// sendSerialCommand remains the same
+// sendSerialCommand remains the same as it contains no web-framework-specific code.
 func sendSerialCommand() error {
 	const portName = "COM3"
 	const baudRate = 9600
@@ -40,7 +41,7 @@ func sendSerialCommand() error {
 	return nil
 }
 
-// *** DIAGNOSTIC FUNCTION to identify the timeout error ***
+// sendSerialCommandWithResponse also remains the same.
 func sendSerialCommandWithResponse() ([]byte, error) {
 	const portName = "COM3"
 	const baudRate = 9600
@@ -84,19 +85,13 @@ func sendSerialCommandWithResponse() ([]byte, error) {
 		bytesRead, err := port.Read(tempBuff)
 
 		if bytesRead > 0 {
-			log.Printf("    ... read %d bytes in this chunk ...\n", bytesRead)
+			log.Printf("      ... read %d bytes in this chunk ...\n", bytesRead)
 			fullResponse = append(fullResponse, tempBuff[:bytesRead]...)
 			totalBytesRead += bytesRead
 		}
 
 		if err != nil {
-			// =================================================================
-			// --- TEMPORARY DEBUGGING CODE ---
-			// This line will print the exact type and value of the error.
 			log.Printf("DEBUG: An error occurred. Type: '%T', Value: '%v'", err, err)
-			// =================================================================
-
-			// For now, we just break on any error.
 			break
 		}
 	}
@@ -111,70 +106,68 @@ func sendSerialCommandWithResponse() ([]byte, error) {
 	return fullResponse, nil
 }
 
-// commandHandler remains the same
-func commandHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Invalid request method. Use POST.", http.StatusMethodNotAllowed)
-		return
-	}
-
+// commandHandler is refactored for Gin.
+func commandHandler(c *gin.Context) {
 	log.Println("Received API request, attempting to send serial command...")
 	err := sendSerialCommand()
 
 	if err != nil {
 		log.Printf("--- SERIAL PORT ERROR: %v ---\n", err)
-		http.Error(w, "Failed to send serial command.", http.StatusInternalServerError)
+		// Use Gin's JSON response for errors
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send serial command."})
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprintln(w, "Command sent successfully.")
 	log.Println("Successfully handled API request and sent 200 OK response.")
+	c.String(http.StatusOK, "Command sent successfully.")
 }
 
-// *** NEW HANDLER for the new API call ***
-func commandWithResponseHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Invalid request method. Use POST.", http.StatusMethodNotAllowed)
-		return
-	}
-
+// commandWithResponseHandler is refactored for Gin.
+func commandWithResponseHandler(c *gin.Context) {
 	log.Println("Received API request for command with response...")
 	response, err := sendSerialCommandWithResponse()
 
 	if err != nil {
 		log.Printf("--- SERIAL PORT ERROR: %v ---\n", err)
-		http.Error(w, "Failed to send serial command or get response.", http.StatusInternalServerError)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to send serial command or get response."})
 		return
 	}
 
-	// Respond with the captured data, encoded in hexadecimal
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, `{"response_hex": "%X"}`, response)
 	log.Println("Successfully handled API request and sent response.")
+	// Use Gin's JSON helper to send the response.
+	c.JSON(http.StatusOK, gin.H{"response_hex": fmt.Sprintf("%X", response)})
 }
 
 func main() {
-	mux := http.NewServeMux()
+	// Initialize a new Gin router. `gin.Default()` includes logger and recovery middleware.
+	router := gin.Default()
 
-	// Register your handlers on the multiplexer
-	mux.HandleFunc("/send-command", commandHandler)
-	mux.HandleFunc("/send-command-with-response", commandWithResponseHandler) // <-- Register new handler
-
-	// --- CONFIGURE CORS ---
-	c := cors.New(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:3000", "http://127.0.0.1:3000", "http://127.0.0.1:5500"},
-		AllowedMethods:   []string{http.MethodPost, http.MethodOptions},
-		AllowedHeaders:   []string{"*"},
+	// --- CONFIGURE CORS for Gin ---
+	// This configuration allows all origins, methods, and headers.
+	// For production, you should restrict these to known sources.
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"*"},
+		AllowMethods:     []string{"POST", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type"},
+		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
-		MaxAge:           int(12 * time.Hour / time.Second),
+		MaxAge:           12 * time.Hour,
+	}))
+
+	// --- DEFINE ROUTES ---
+	router.GET("/ping", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"message": "pong"})
 	})
+	// Use router.POST to be more explicit about the required HTTP method.
+	router.POST("/send-command", commandHandler)
+	router.POST("/send-command-with-response", commandWithResponseHandler)
 
-	handler := c.Handler(mux)
+	const serverAddr = "0.0.0.0:8080"
+	log.Printf("Starting Gin web server with CORS enabled on %s\n", serverAddr)
 
-	const serverAddr = ":8080"
-	log.Printf("Starting web server with CORS enabled on http://localhost%s\n", serverAddr)
-
-	log.Fatal(http.ListenAndServe(serverAddr, handler))
+	// Start the server. `router.Run()` is a convenience wrapper around http.ListenAndServe.
+	// It will log any errors and Fatal.
+	if err := router.Run(serverAddr); err != nil {
+		log.Fatalf("Failed to run server: %v", err)
+	}
 }
